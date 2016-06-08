@@ -4,42 +4,74 @@
 var map = null;
 var query;
 var queryKey = '1TrPvFu5XUNIYRG3slGE~g1DeVC-r074_2Yn63QMH8Q~AvtN87-ebJjpBC5ClqBwbszhQfogB7hsKce2QUNNvtfgdKqRqTOpJ68yzUpYud2u';
-var originAddress;
-var currentAddress;
-var maxUnver;
-var minUnver;
-var max;
-var smallestOriginValidAddress; var largestOriginValidAddress; var smallestValidAddress; var largestValidAddress;
-var min;
 var currInfobox;
-var addressNums;
-var addressWONums;
-var newAddress;
-var newAddressWONums;
-var newAddressNum;
-var newAddressUp;
-var newAddressNumDown;
-var newAddressDown;
 var southLatitude = 0;
 var westLongitude = 0;
 var northLatitude = 0;
 var eastLongitude = 0;
+var countCenter = 0;
+var pinCollection = new Microsoft.Maps.EntityCollection();
+var addressNums;
+var addressWONums;
+var addressList;
+
+
+
+var originAddress;
+var originAddressNums;
+var originAddressWONums;
+var originStreetname;
+
+var currentAddress;
+var currentMax;
+var currentMin;
+var counter = 0;
+
+var smallestOriginValidAddress;
+var smallestValidAddress;
+var largestOriginValidAddress;
+var largestValidAddress;
+var totalOriginBuildings = 0;
+var totalBuildings = 0;
+var averageAddressDifference = 0;
+
 var homes = [];
 var censusData = [];
-var countCenter = 0;
-var streetname; var streetnameSuffix; var cityname; var statename;
-var maxSearches = 0;
-var searchCount = 0;
 var arrayOfStreetnames = [];
+var streetname;
+var streetnameSuffix;
+var cityname;
+var statename;
+var streetnameToLowercase;
+
+var maxAllowedSearches = 0;
+var lowRangeSearches = 0;
+var highRangeSearches = 0;
 var lowRangeHitZero = false;
 var haveSurroundingStreets = false;
 var firstValidAddressHit = false;
+var firstAddressSearchValidateAttempt= false;
+var firstAddressSearchValidateAttempResult;
 var rangeCalculated = false;
 var searchReady = false;
 var searchComplete = false;
-var firstSearch = true;
+var firstAddressSearch = true;
 var bboxCalculated = false;
-var maxRangeHitCount = 0;
+var DBChecked = false;
+var addressPrepared = false;
+var inLocalDB = false;
+var foundSmallestAddressNum = false;
+var foundLargestAddressNum = false;
+var DBResponse;
+var buildingTimeCounter = 0;
+var testCounter = 0;
+var firstAddressHitCount = 0;
+var consecutiveMisses;
+var addressDiffMultiple;
+var addressInsertedToDB;
+
+
+
 
 function getMap()
 {
@@ -48,384 +80,647 @@ function getMap()
 
 }
 
-  
+
 function main()
 {
-    if (firstSearch)
-    {  
-        if(!bboxCalculated)
+    if (firstAddressSearch)
+    {
+        console.log("user-input address about to be searched");
+        if (!firstAddressSearchValidateAttempt)
         {
-            setTimeout(setBbox(),100);
+            console.log("validating user-input address");
+            validateFirstAddress();
         }
-        else if(!haveSurroundingStreets)
+        else if(firstAddressSearchValidateAttempResult === undefined)
         {
-            setTimeout(getSurroundingStreets(),100);
+            console.log("firstAddressSearchValidateAttemptResult is undefined");
+           main();
         }
         else
         {
-            getOriginLocation();
+            console.log("setting first address search to false");
+            firstAddressSearch = false;
+            setTimeout(main,50);
         }
-        
-    } else if(!rangeCalculated)
-    {
-        setTimeout(findAddressRange(), 100);
+
     }
-    else if(!searchReady)
+    else if (!bboxCalculated)
     {
-        setTimeout(generateAddressField(),100);
-    }
-    else if(!searchComplete)
+        console.log("calculating bbox");
+        setBbox();
+    } else if (!haveSurroundingStreets)
     {
-        setTimeout(validateAddressField(), 100);
-    }
-    else
+        console.log("finding surrounding streets");
+        getSurroundingStreets();
+    } else if(!DBChecked)
     {
-            if(arrayOfStreetnames.length > 0)
+          console.log("checking for " + streetname + "  in Database");
+          getAddressRange();
+    } else if(!inLocalDB)
+    {
+        //console.log("not in local DB");
+           if(!firstValidAddressHit)
+           {
+               console.log("trying to find first valid address with address as: \n" + streetname);
+               if(firstAddressHitCount == 0)
+               {
+                   console.log("getting location");
+                   getLocation();
+               }
+               else
+               {
+                   setTimeout(getLocation(),firstAddressHitCount * 100);
+               }
+               firstAddressHitCount++;
+               
+           }
+           else if(!rangeCalculated)
+           {
+               console.log("calculating range");
+               setAddressRange();
+           }
+           else if(!searchReady)
             {
-              
-                alert("not done");
-                homes = [];
-                searchCount = 0;
-                maxRangeHitCount = 0;
-                lowRangeHitZero = false;
-                firstValidAddressHit = false;
-                rangeCalculated = false;
-                searchReady = false;
-                searchComplete = false;
-                //max # searches for given street without known address range 
-                maxSearches = Math.pow(10, addressNums.length -1);
-                setTimeout(getNewLocation(),100);
+                console.log("generating address field for " + streetname);
+                generateAddressField();
             }
-            else
+            else if(!searchComplete)
             {
-                alert("done");
+                console.log("validating addres field for " + streetname);
+                validateAddressField();
             }
-        
-    }
-
-    
-}
-
-function setBbox()
-{
-    query = document.getElementById('searchBox').value;
-    map.getCredentials(callSearchService);
-}
-
-function getSurroundingStreets()
-{
-     /**********************OSM RETRIEVAL CODE ******************************/
-            var osmData = new XMLHttpRequest();
-            //will return php address results
-            osmData.onload = function () {
-                //This is where you handle what to do with the response.
-                //The actual data is found on this.responseText
-
-                var stringOfAddresses = this.responseText;
+            else if(addressList > 0 && testCounter < 3)
+            {
                 
-                haveSurroundingStreets = true;
-                arrayOfStreetnames = stringOfAddresses.split(',');
-                main();
-                //outputs all street names within the specified bbox
-                //console.log(arrayOfStreetnames);
-
-            }; //END ONLOAD
-
-
-
-            /**********************OSM DATA REQUEST CODE ****************************/
-            //utilizes previously declared coordinates 
-            var variableString = "southlat=" + southLatitude + "&westlong=" + westLongitude + "&northlat=" + northLatitude + "&eastlong=" + eastLongitude;
-            osmData.open("GET", "getOSMData.php?" + variableString, true);
-            osmData.send();
-            /**********************************************************************************/
-}
-
-function getOriginLocation()
-{
-    originAddress = document.getElementById('searchBox').value;
-    addressWONums = originAddress.substring(originAddress.indexOf(" ") + 1, originAddress.length);
-    addressNums = originAddress.substring(0, originAddress.indexOf(" "));
-    addressRangeService(originAddress);
-}
-
-
-function getNewLocation()
-{
-    newAddressNum = smallestOriginValidAddress - 1;
-    addressWONums = arrayOfStreetnames[arrayOfStreetnames.length -1] + ", " + cityname;
-    newAddress = newAddressNum + " " + addressWONums;
-    arrayOfStreetnames.length--;
-    addressRangeService(newAddress); 
-}
-
-
-
-//finds smallest, then largest address range for given street
-function findAddressRange()
-{
-    
-    if(smallestValidAddress == null)
-    {
-        //alert("finding smallest valid address");
-        findSmallestAddress();
-    }
-    else if(largestValidAddress == null)
-    {
-        //alert("finding largest valid address");
-        findLargestAddress();
-    }
-    else
-    {
-       /* if (window.XMLHttpRequest) {
-            xmlhttp = new XMLHttpRequest();
-        } else {
-            xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
-        }
-        */
-        
-        var lowAddressPlaceholder = "lowaddress=";
-        var lowAddressVariable = smallestValidAddress;
-        var highAddressPlaceholder = "highaddress=";
-        var highAddressVariable = largestValidAddress;
-        var streetnamePlaceholder = "streetname=";
-        var streetnameVariable = streetname + " " + streetnameSuffix;
-        var cityPlaceholder = "city=";
-        var cityVariable =  cityname;
-        var statePlaceholder = "state=";
-        var stateVariable = statename;
-        var PageToSendTo = "insertNewAddress.php?";
-        var url = PageToSendTo + lowAddressPlaceholder +  lowAddressVariable + "&" + highAddressPlaceholder +  highAddressVariable + "&" + streetnamePlaceholder +  streetnameVariable + "&" + cityPlaceholder +  cityVariable + "&"  + statePlaceholder +  stateVariable;
-
-
-         /*xmlhttp.onreadystatechange = function() {
-            if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
-                alert(xmlhttp.responseText);
-            }
-        };
-
-
-        xmlhttp.open("GET", url, true);
-        xmlhttp.send();*/
-        
-        
-       rangeCalculated = true;
-        main();
-    }
-    
-}
-
-function findSmallestAddress()
-{
-    if(min - 1 > 0 || newAddressNum - 1 > 0)
-    {
-        if(firstValidAddressHit)
-        {
-            //alert("firstValidAddressHit");
-            minUnver =  min - 1;
-            currentAddress = minUnver + " " + addressWONums;
-            addressRangeService(currentAddress);
-        }
-        else
-        {
-            if(searchCount < maxSearches && maxRangeHitCount == 0)
-            {
-                //alert("firstValidAddress not hit, running through low range");
-                searchCount++;
-                newAddressNum--;
-                currentAddress = newAddressNum + " " + addressWONums;
-                addressRangeService(currentAddress);
-            }
-            else
-            {
-                maxRangeHitCount++;
-                if(maxRangeHitCount == 1)
+                if(totalOriginBuildings === 0)
                 {
-                    searchCount = 0;
+                    console.log("# buildings is zero");
+                    totalBuildings = totalOriginBuildings;
+                    setTimeout(main, 100);
                 }
-                //alert("firstValidAddress not hit, running through high range");
-                findLargestAddress();
-                
-            }
-        }
-    }
-    else
-    {
-        if(lowRangeHitZero)
-        {
-             findLargestAddress();
-        }
-        else
-        {
-            lowRangeHitZero = true;
-            searchCount = 0;
-            findLargestAddress();
-        }
-       
-    }
-        
-}
-
-function findLargestAddress()
-{
-    
-        if(firstValidAddressHit)
-        {
-            maxUnver =  max + 1;
-            currentAddress = maxUnver + " " + addressWONums;
-             addressRangeService(currentAddress);
-        }
-        else
-        {
-            if(searchCount < maxSearches)
-            {
-                if(searchCount == 0)                {
-                    newAddressNum = largestOriginValidAddress + 1;
+                else if(totalOriginBuildings  > totalBuildings)
+                {
+                    totalBuildings = totalOriginBuildings;
+                    buildingTimeCounter++;
+                    console.log(totalOriginBuildings + " buildings have been found");
+                    setTimeout(main,buildingTimeCounter * 1000);
                 }
                 else
                 {
-                     newAddressNum++;
+                    if(testCounter == 0)
+                    {
+                        averageAddressDifference = Math.ceil((largestValidAddress - smallestValidAddress)/totalOriginBuildings);
+                    }
+                    
+                    console.log(largestValidAddress);
+                    console.log(smallestValidAddress);
+                    console.log("Total # buildings on origin street is " + totalBuildings);
+                    console.log("address difference is " + averageAddressDifference);
+                    testCounter++;
+                    //console.log("search complete for " + streetname + " not originally in local database, now preparing next address");
+                    prepareNextAddressSearch();
                 }
-               
-                currentAddress = newAddressNum + " " + addressWONums;
-                addressRangeService(currentAddress);
+            }  //grab next address in array and start over
+            else
+            {
+                console.log("search complete for bbox");
+            }
+            
+    } else
+    {
+        if (!searchReady)
+        {
+            console.log(streetname + " is in database");
+            generateAddressField();
+        } else if (!searchComplete)
+        {
+            validateAddressField();
+        }
+        else if(addressList > 0)
+        {
+            
+             if(totalOriginBuildings === 0)
+                {
+                    console.log("# buildings is zero");
+                    totalBuildings = totalOriginBuildings;
+                    setTimeout(main, 100);
+                }
+                else if(totalOriginBuildings  > totalBuildings)
+                {
+                    totalBuildings = totalOriginBuildings;
+                    buildingTimeCounter++;
+                    console.log(totalOriginBuildings + " buildings have been found");
+                    setTimeout(main,buildingTimeCounter * 1000);
+                }
+                else
+                {
+                    if(testCounter == 0)
+                    {
+                        averageAddressDifference = Math.ceil((largestValidAddress - smallestValidAddress)/totalOriginBuildings);
+                    }
+                    
+                    console.log(largestValidAddress);
+                    console.log(smallestValidAddress);
+                    console.log("Total # buildings on origin street is " + totalBuildings);
+                    console.log("address difference is " + averageAddressDifference);
+                    testCounter++;
+                    //console.log("search complete for " + streetname + " not originally in local database, now preparing next address");
+                    prepareNextAddressSearch();
+                }
+        }
+        else
+        {
+            alert("all addresses in bbox have been searched");
+        }
+        
+    }
+}
+
+
+function validateFirstAddress()
+{
+    firstAddressSearchValidateAttempt = true;
+    addressRangeService(document.getElementById('searchBox').value);
+}
+
+
+function prepareNextAddressSearch()
+{
+        homes = [];
+        currentMin = 0;
+        currentMax = 0;
+        inLocalDB = false;
+        DBChecked = false;
+        firstValidAddressHit = false;
+        rangeCalculated = false;
+        searchReady = false;
+        searchComplete = false;
+        foundSmallestAddressNum = false;
+        foundLargestAddressNum = false;
+        lowRangeHitZero = false;
+        firstAddressHitCount = 0;
+        buildingTimeCounter = 0;
+        consecutiveMisses;
+        addressDiffMultiple;
+        lowRangeSearches = 0;
+        highRangeSearches = 0;
+        streetname = arrayOfStreetnames[arrayOfStreetnames.length - 1]; //store new address to be searched for in variable
+        addressWONums = streetname + ", " + cityname; //^^along with its components
+        arrayOfStreetnames.pop();
+        addressList = arrayOfStreetnames.length;
+        main();
+       
+}
+
+
+/**checks local database for existence of address
+ * 
+ * @returns {undefined}
+ */
+function getAddressRange()
+{
+
+    /**********************ADDRESS RETRIEVAL CODE ******************************/
+    var addressData = new XMLHttpRequest();
+    //will return php address results
+
+    addressData.onload = function () {
+
+        //This is where you handle what to do with the response.
+        //The actual data is found on this.responseText
+        DBResponse = this.responseText;
+        DBChecked = true;
+        if(DBResponse == "DNE")
+        {
+            inLocalDB = false;
+            
+        }
+        else
+        {
+            inLocalDB = true;
+        }
+        
+        
+        main();
+        
+    }; //END ONLOAD
+
+
+
+    /**********************ADDRESS DATA REQUEST CODE ****************************/
+
+    var streetnamePlaceholder = "streetname=";
+    var cityPlaceholder = "city=";
+
+    var streetnameVariable;
+    var cityVariable;
+
+
+    var PageToSendTo = "checkAddress.php?";
+    var url;
+    
+    
+    
+    streetnameVariable = streetname;
+    cityVariable = cityname;
+    url = PageToSendTo + streetnamePlaceholder + streetnameVariable + "&" + cityPlaceholder + cityVariable;
+
+
+    addressData.open("GET", url, true);
+    addressData.send();
+    /**********************************************************************************/
+}
+
+
+/**
+ * creates variables that hold complete address of new address to be searched
+ * @returns {undefined}
+ */
+function getLocation()
+{
+    if(originAddress.indexOf(streetname) > -1 /*Run if address is the user-inputted address */)
+    { 
+        addressRangeService(originAddress);
+    }
+    else 
+    { 
+        
+        if(consecutiveMisses === undefined)
+        {
+            consecutiveMisses = 0;
+        }
+        else
+        {
+            consecutiveMisses++;
+        }
+        
+        
+        
+        
+        if(lowRangeSearches <= maxAllowedSearches && !lowRangeHitZero/* decrease address until we get valid*/)
+        { 
+            if(consecutiveMisses == averageAddressDifference)
+            {
+                if(addressDiffMultiple === undefined)
+                {
+                    addressDiffMultiple = consecutiveMisses;
+                    
+                }
+                else
+                {
+                    addressDiffMultiple = addressDiffMultiple * consecutiveMisses;
+                }
+                
+                consecutiveMisses = 0;
+                maxAllowedSearches = Math.ceil(maxAllowedSearches/addressDiffMultiple);
+                addressNums -= averageAddressDifference * consecutiveMisses;
+                 currentAddress = addressNums + " " + addressWONums;
+                 setTimeout(addressRangeService(currentAddress),50);
+            }
+            else if(addressDiffMultiple === undefined)
+            {
+                addressNums -= averageAddressDifference; 
+                currentAddress = addressNums + " " + addressWONums;
+                setTimeout(addressRangeService(currentAddress),50);
             }
             else
             {
-               alert("address range could not be found for " + arrayOfStreetnames[arrayOfStreetnames.length -1] );
+                addressNums -= averageAddressDifference * addressDiffMultiple;   
+               currentAddress = addressNums + " " + addressWONums;
+               setTimeout(addressRangeService(currentAddress),50);
             }
         }
-        
+        else if(lowRangeSearches <=  maxAllowedSearches && lowRangeHitZero /* resets address so to search high values as last resort; note, this should only be called once for each street *if we havent found any valid ranges yet*/)
+        {
+           console.log("resetting address to smallest valid address so to search only high range now");
+           maxAllowedSearches = Math.pow(10, originAddressNums.length) + (maxAllowedSearches - lowRangeSearches);
+           lowRangeSearches = maxAllowedSearches + 1;
+           addressNums = smallestValidAddress + averageAddressDifference;
+           currentAddress = addressNums + " " + addressWONums;
+           consecutiveMisses = 0;
+           addressDiffMultiple;
+           setTimeout(addressRangeService(currentAddress),50);
+        }  
+        else if(lowRangeSearches > maxAllowedSearches && highRangeSearches <= maxAllowedSearches)
+        {
+            console.log("high range is still lower or equal to max searches allowed");
+             if(consecutiveMisses == averageAddressDifference)
+            {
+            
+                if(addressDiffMultiple === undefined)
+                {
+                    addressDiffMultiple = consecutiveMisses;
+                }
+                else
+                {
+                    addressDiffMultiple = addressDiffMultiple * consecutiveMisses;
+                }
+  
+  
+                consecutiveMisses = 0;
+                maxAllowedSearches = Math.ceil(maxAllowedSearches/addressDiffMultiple);
+                addressNums += averageAddressDifference * consecutiveMisses;
+                currentAddress = addressNums + " " + addressWONums;
+                
+                
+               
+            }
+            else if(addressDiffMultiple === undefined)
+            {
+               addressNums += averageAddressDifference; 
+                currentAddress = addressNums + " " + addressWONums;
+                setTimeout(addressRangeService(currentAddress),50);
+            }
+            else
+            {
+                addressNums += averageAddressDifference * addressDiffMultiple;   
+               currentAddress = addressNums + " " + addressWONums;
+               setTimeout(addressRangeService(currentAddress),50);
+            }
+            
+        }
+        else /*at this point, no valid address ranges could be found for given street address inputed by user */
+        {
+            alert("searched high and low but found no valid address range for given street");
+            firstAddressSearch = true;
+            bboxCalculated = false;
+            haveSurroundingStreets = false;
+            DBChecked = false;
+            firstAddressSearchValidateAttempt = false;
+            consecutiveMisses;
+            addressDiffMultiple;
+            lowRangeSearches = 0;
+            highRangeSearches = 0;
+            firstAddressHitCount = 0;
+            buildingTimeCounter = 0;
+            testCounter = 0;
+            document.getElementById('searchBox').value = '';
+            //search high and low within max range but found no valid address ranges for given street
+        }
+    }
 }
 
 
-
-//sets up query to uscensus one line address search api
-function addressRangeService(currentAddress)
+/**
+ * query request setup for US census geocoder
+ * @param {type} currAddr
+ * @returns {undefined}
+ */
+function addressRangeService(currAddr)
 {
-    //set its source api to the JSONP API
-    var USCensusSearch = "http://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=" + currentAddress + "&benchmark=Public_AR_Current" + "&format=jsonp" + "&callback=addressRangeCallback";
-    //create a new script element
-    var censusReturn = document.createElement('script');
-    //set its source api to the JSONP API
-    censusReturn.type = 'text/javascript';
-    censusReturn.src = USCensusSearch;
-    //stick the script element in the page myMap
-    document.getElementById('myMap').appendChild(censusReturn);
+
+    if (currAddr === undefined)
+    {
+        main();
+    } else
+    {
+        //set its source api to the JSONP API
+        var USCensusSearch = "http://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=" + currAddr + "&benchmark=Public_AR_Current" + "&format=jsonp" + "&callback=addressRangeCallback";
+        //create a new script element
+        var censusReturn = document.createElement('script');
+        //set its source api to the JSONP API
+        censusReturn.type = 'text/javascript';
+        censusReturn.src = USCensusSearch;
+        //stick the script element in the page myMap
+        document.getElementById('myMap').appendChild(censusReturn);
+    }
 
 }
 
 
-
+/**
+ * US Census geocoder callback functiont that will always jump back to main function 
+ *
+ * @param {type} json
+ * @returns {undefined}
+ */
 function addressRangeCallback(json)
 {
 
     if (json)
     {
-
         try {
-
-            //address is within valid range for given street #
-            if (typeof json.result.addressMatches[0].matchedAddress !== 'undefined')
+            if (typeof json.result.addressMatches[0].matchedAddress !== 'undefined'/* current address being searched is valid address within valid range*/)
             {
-                
-                
-                if(firstSearch)
+                 firstValidAddressHit = true;
+                //console.log("address is in US Census database");
+
+
+                if (firstAddressSearch/* current address is one inputted by user*/)
                 {
-                    firstSearch = false;
-                   
+                    //firstAddressSearch = false;
+                    originAddress = document.getElementById('searchBox').value;
+                    originAddressNums = originAddress.substring(originAddress.indexOf(" ") + 1, originAddress.length);
+                    addressNums = originAddress.substring(0, originAddress.indexOf(" "));
+                    addressWONums = originAddress.substring(originAddress.indexOf(" ") + 1, originAddress.length);
+                    originAddressWONums = addressWONums;
+                    var addressComponentsWONums = addressWONums.split(',');
+                    streetname = addressComponentsWONums[0].trim();
+                    originStreetname = streetname;
+                    cityname = addressComponentsWONums[1].trim();
+                    maxAllowedSearches = Math.pow(10, addressNums.length);
+                    firstAddressSearchValidateAttempResult = true;
                 }
-                
-                if(!firstValidAddressHit)
-                {
-                     firstValidAddressHit = true;
-                }
-                    
-                
-                //alert(json.result.addressMatches[0].matchedAddress);
+
+               
+
+
                 censusData[0] = json.result.addressMatches[0].addressComponents.fromAddress;
                 censusData[1] = json.result.addressMatches[0].addressComponents.toAddress;
                 censusData[2] = json.result.addressMatches[0].addressComponents.streetName;
                 censusData[3] = json.result.addressMatches[0].addressComponents.suffixType; //Rd, Ln, St, etc..
                 censusData[4] = json.result.addressMatches[0].addressComponents.city;
                 censusData[5] = json.result.addressMatches[0].addressComponents.state;
-                
-                
-                streetname = censusData[2];
                 streetnameSuffix = censusData[3];
+                streetname = censusData[2] + " " + streetnameSuffix;
                 cityname = censusData[4];
                 statename = censusData[5];
-                
-                min = Number(censusData[0]);
-                max = Number(censusData[1]);
-
+                currentMin = Number(censusData[0]);
+                currentMax = Number(censusData[1]);
+                main();
             }
-        } catch (e)
+        } catch (e /*current address being searched is not in valid range for given street*/)
         {
-
-            if(firstValidAddressHit)
-            {      
-                //find address number that is not valid for inputted address
-                var val  = Number(json.result.input.address.address.substring(0, currentAddress.indexOf(" ")));
-                //check if max or min address # hit for given street
-                if(val == minUnver)
+            if (firstAddressSearch)
+            {
+                firstAddressSearch = true;  
+                firstAddressSearchValidateAttempt = false;
+                firstAddressSearchValidateAttempResult;
+               alert("The address could not be found");
+               document.getElementById('searchBox').value = '';
+                
+            } else if (firstValidAddressHit /*We have found, at least, one valid address for given street*/)
+            {
+                if(!foundSmallestAddressNum)
                 {
-                    if(originAddress.indexOf(streetname) !== -1)
-                    {
-                        smallestOriginValidAddress = min;
-                    }
-                    smallestValidAddress = min;
+                    foundSmallestAddressNum = true;
+                    smallestValidAddress = currentMin + 1; //save smallest valid address for given street
+                    addressNums = smallestValidAddress;
+                    main();
                 }
                 else
                 {
-                    if(originAddress.indexOf(streetname) !== -1)
-                    {
-                        largestOriginValidAddress = max;
-                    }
-                    largestValidAddress = max;
+                    foundLargestAddressNum = true;
+                     largestValidAddress = currentMax - 1; //save largest valid address for given street   
+                    main();
                 }
+                
             }
-            else if(firstSearch)
+            else if(addressNums < smallestValidAddress)
             {
-                    alert("Sorry, we could not find " + '"' + json.result.input.address.address + '"');
+                
+                if(addressNums <= 0)
+                {
+                    lowRangeHitZero = true;
+                }
+                lowRangeSearches++;
+                main();
             }
-
-
-
+            else
+            {
+                highRangeSearches++;
+                main();
+            }
         }
-
-        main();
     }
 }
+
+
+
+/* 1) finds smallest address range
+ * 2) finds largest address range
+ * 3)inserts new street data into database(since at this function call, it is assumed, via program execution sequence, that current street info is not in our DB)
+ * @returns {undefined}
+ */
+function setAddressRange()
+{
+
+    if (!foundSmallestAddressNum)
+    {
+        console.log("Smallest valid address not found ");
+        findSmallestAddress();
+    } else if (!foundLargestAddressNum)
+    {
+        console.log("Largest valid address not found");
+        findLargestAddress();
+    } else
+    {
+        saveAddressToDB();
+    }
+
+}
+
+
+
+function saveAddressToDB()
+{
+    /**********************NEW DATABASE DATA INSERTION RETRIEVAL CODE ******************************/
+        var newData = new XMLHttpRequest();
+        //will return php address results
+        newData.onload = function () {
+            //This is where you handle what to do with the response.
+            //The actual data is found on this.responseText
+            //alert("newData inserted");
+            rangeCalculated = true;
+            main();
+        }; //END ONLOAD
+
+
+
+        /**********************NEW DATABASE  DATA INSERTION REQUEST CODE ****************************/
+        var lowAddressPlaceholder = "lowaddress=";
+        var lowAddressVariable = smallestValidAddress;
+        var highAddressPlaceholder = "highaddress=";
+        var highAddressVariable = largestValidAddress;
+        var streetnamePlaceholder = "streetname=";
+        var streetnameVariable = streetname;
+        var cityPlaceholder = "city=";
+        var cityVariable = cityname;
+        var statePlaceholder = "state=";
+        var stateVariable = statename;
+        var PageToSendTo = "insertNewAddress.php?";
+        var url = PageToSendTo + lowAddressPlaceholder + lowAddressVariable + "&" + highAddressPlaceholder + highAddressVariable + "&" + streetnamePlaceholder + streetnameVariable + "&" + cityPlaceholder + cityVariable + "&" + statePlaceholder + stateVariable;
+
+        newData.open("GET", url, true);
+        newData.send();
+
+        /**********************************************************************************/
+}
+
+
+/**
+ * at this point, min has been validated or is zero, indicating that we are searching for street addresses other than original street AND newAdressNum is either undefined or smallestOriginalValidAddress
+ * @returns {undefined}
+ */
+function findSmallestAddress()
+{
+    currentMin--;
+    currentAddress = currentMin + " " + addressWONums;
+    setTimeout(addressRangeService(currentAddress),150);
+}
+
+function findLargestAddress()
+{
+    currentMax++;
+    currentAddress = currentMax + " " + addressWONums;
+    setTimeout(addressRangeService(currentAddress),150);
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //creates array with finalized address range for given street
 function generateAddressField()
 {
+    
+    if(inLocalDB)
+    {
+         //Prepare data from database for  address
+        DBResponse = JSON.parse(DBResponse);
+        smallestValidAddress = DBResponse.lowaddress;
+        largestValidAddress = DBResponse.highaddress;
+        streetname = DBResponse.streetname;
+        streetnameSuffix = censusData[3];
+        cityname = DBResponse.city;
+        statename = DBResponse.state;
+    }
+    
     var low = smallestValidAddress;
     var high = largestValidAddress;
-    
-    while(low <= high)
+
+    var addr;
+    while (low <= high)
     {
-        newAddressUp = low + " " + addressWONums;
-        homes.push(newAddressUp);
+        addr = low + " " + addressWONums;
+        homes.push(addr);
         low++;
     }
     searchReady = true;
-    main();
+    setTimeout(main(),100);
 }
 
 function validateAddressField()
 {
 
-    for(var x = 0; x < homes.length; x++)
+    for (var x = 0; x < homes.length; x++)
     {
         query = homes[x];
         map.getCredentials(callSearchService);
     }
-    
+
     searchComplete = true;
-    main();
+    setTimeout(main(),100);
 }
 
 
@@ -453,9 +748,9 @@ function searchServiceCallback(result)
             result.resourceSets[0].resources &&
             result.resourceSets[0].resources.length > 0 && result.resourceSets[0].resources[0].geocodePoints[0].calculationMethod == "Parcel")
     {
-
         if (countCenter == 0)
         {
+           
             countCenter++;
             northLatitude = result.resourceSets[0].resources[0].point.coordinates[0] + 0.003;
             westLongitude = result.resourceSets[0].resources[0].point.coordinates[1] - 0.006;
@@ -463,43 +758,32 @@ function searchServiceCallback(result)
             eastLongitude = result.resourceSets[0].resources[0].point.coordinates[1] + 0.006;
             bboxCalculated = true;
             main();
-        }
-        else
+        } else
         {
-             var viewRect = Microsoft.Maps.LocationRect.fromEdges(northLatitude, westLongitude, southLatitude, eastLongitude);
+            
+            var viewRect = Microsoft.Maps.LocationRect.fromEdges(northLatitude, westLongitude, southLatitude, eastLongitude);
             map.setView({bounds: viewRect});
-            
-            
             var location = new Microsoft.Maps.Location(result.resourceSets[0].resources[0].point.coordinates[0], result.resourceSets[0].resources[0].point.coordinates[1]);
             var pin = new Microsoft.Maps.Pushpin(location);
+             if(originAddress.indexOf(currentAddress) == -1)
+            {
+                pinCollection.push(pin);
+                totalOriginBuildings++;
+            }
+            
+            
             Microsoft.Maps.Events.addHandler(pin, 'click', function () {
                 showInfoBox(result);
             });
+            
+            
             map.entities.push(pin);
-            
-            
-             /*var spatialFilter = 'spatialFilter=bbox(' + southLatitude + ',' + westLongitude + ',' + northLatitude + ',' + eastLongitude + ')';
-         var select = '$select=*';
-         var format = '$format=json';
-         var sdsRequest = 'http://spatial.virtualearth.net/REST/v1/data/f22876ec257b474b82fe2ffcb8393150/NavteqNA/NavteqPOIs?' + spatialFilter + '&' + select + '&' + format + '&' + 'jsonp=SDSServiceCallback' + '&key=' + queryKey;
-         
-         var mapscript2 = document.createElement('script');
-         mapscript2.type = 'text/javascript';
-         mapscript2.src = sdsRequest;
-         document.getElementById('myMap').appendChild(mapscript2);
-         */
+
+
         }
-        
+
     }
 }
-
-/* function SDSServiceCallback(result)
- {
- var viewRect = Microsoft.Maps.LocationRect.fromEdges(northLatitude, westLongitude, southLatitude, eastLongitude);
- map.setView({bounds: viewRect});
- 
- query_onQuerySuccess(result['d']);
- }*/
 
 
 function query_onQuerySuccess(result)
@@ -578,4 +862,42 @@ function showInfoBox(result)
 }
 
 
-  
+function setBbox()
+{
+    query = document.getElementById('searchBox').value;
+    map.getCredentials(callSearchService);
+}
+
+function getSurroundingStreets()
+{
+    /**********************OSM RETRIEVAL CODE ******************************/
+    var osmData = new XMLHttpRequest();
+    //will return php address results
+    osmData.onload = function () {
+        //This is where you handle what to do with the response.
+        //The actual data is found on this.responseText
+
+        haveSurroundingStreets = true;
+        arrayOfStreetnames = this.responseText.split(',');
+        addressList = arrayOfStreetnames.length;
+        main();
+        //outputs all street names within the specified bbox
+        //console.log(arrayOfStreetnames);
+
+    }; //END ONLOAD
+
+
+
+    /**********************OSM DATA REQUEST CODE ****************************/
+    //utilizes previously declared coordinates 
+    var variableString = "southlat=" + southLatitude + "&westlong=" + westLongitude + "&northlat=" + northLatitude + "&eastlong=" + eastLongitude;
+    osmData.open("GET", "getOSMData.php?" + variableString, true);
+    osmData.send();
+    /**********************************************************************************/
+}
+
+
+
+function type(val) {
+    return Object.prototype.toString.call(val).replace(/^\[object (.+)\]$/, "$1").toLowerCase();
+}

@@ -1,8 +1,6 @@
-<!DOCTYPE html>
 <html>
    <head>
-      <title>Find a location by query</title>
-      
+       <title>Find a location by query</title>
       <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
       <script type="text/javascript" src="http://ecn.dev.virtualearth.net/mapcontrol/mapcontrol.ashx?v=7.0"></script>
       <script type="text/javascript" src="test.js"></script>
@@ -20,5 +18,4 @@
    </body>
 </html>
 
-<?php
 
